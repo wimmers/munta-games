@@ -1,7 +1,7 @@
 theory Safety_Certification
   imports
     Simulation_Graphs_Certification2
-    Certification.Unreachability_Certification2
+    Certification.Unreachability_Common
     "~/Code/Explorer/Guess_Explore"
 begin
 
@@ -54,6 +54,8 @@ locale Reachability_Impl_pre =
   Paired_Graph_Set where E = E for E :: "'l \<times> 's \<Rightarrow> _"
 begin
 
+\<comment> \<open>Note that these instantiations can be restricted more,
+  e.g.\ to allow subsumption checking with certificates.\<close>
 sublocale Certification_Impl
   where R = "\<lambda>l s xs. s \<preceq> xs"
     and R_impl = "\<lambda>l s xs. RETURN (s \<preceq> xs)"
@@ -105,6 +107,8 @@ lemma project_subsI:
   "A \<restriction> l \<subseteq> B \<restriction> l" if "A \<subseteq> B"
   using that unfolding project_def by auto
 
+\<comment> \<open>Note that the second occurrence of \<^term>\<open>less_eq'\<close> can be restricted
+  to only use certain subsumptions (e.g.\ from certificates).\<close>
 lemma Unreachability_Invariant_pairedI[rule_format]:
   "check_all_spec \<longrightarrow> Unreachability_Invariant E P less_eq' I less_eq'"
   unfolding check_all_spec_def check_all_pre_spec_def check_invariant_spec_def
@@ -198,5 +202,16 @@ lemma certify_unreachable_correct':
   by (refine_vcg certify_unreachableI[rule_format] certify_unreachable_correct; fast)
 
 end
+
+locale Reachability_Impl =
+  Certification_Impl_imp where M = M and K = K and A = A +
+  Reachability_Impl_correct where M = "\<lambda>x. case M x of None \<Rightarrow> {} | Some S \<Rightarrow> S"
+    for M :: "'k \<Rightarrow> 'a set option"
+    and K :: "'k \<Rightarrow> 'ki :: {hashable,heap} \<Rightarrow> assn"
+    and A :: "'a \<Rightarrow> 'ai :: heap \<Rightarrow> assn" +
+  \<comment> \<open>Again, as explained above, this can be replaced with a more specific subsumption.\<close>
+  fixes Lei
+  assumes Lei[sepref_fr_rules]:
+    "(uncurry Lei,uncurry (RETURN oo PR_CONST less_eq)) \<in> A\<^sup>k *\<^sub>a (lso_assn A)\<^sup>k \<rightarrow>\<^sub>a bool_assn"
 
 end
