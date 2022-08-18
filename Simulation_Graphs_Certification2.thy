@@ -193,7 +193,7 @@ qed
 
 context
   fixes F :: "'a \<Rightarrow> bool" \<comment> \<open>Final states\<close>
-  assumes F_mono[intro]: "F a \<Longrightarrow> a \<preceq> B \<Longrightarrow> \<exists>b \<in> B'. F b"
+  assumes F_mono[intro]: "P a \<Longrightarrow> F a \<Longrightarrow> a \<preceq> B \<Longrightarrow> \<forall>b \<in> B. P b \<Longrightarrow> \<exists>b \<in> B. F b"
 begin
 
 corollary final_unreachable:
@@ -214,7 +214,7 @@ proof -
   ultimately have "stream_all2 (\<lambda>x y. x \<preceq> y \<and> P x \<and> Inv y) xs ys"
     by (smt stream.pred_set stream.rel_mono_strong)
   with assms(3) \<open>s\<^sub>0 \<preceq> _\<close> \<open>P s\<^sub>0\<close> \<open>Inv S\<^sub>0\<close> have "alw (ev (holds (\<lambda>S. \<exists>s \<in> S. F s))) (S\<^sub>0 ## ys)"
-    by (elim alw_ev_lockstep) (erule stream.rel_intros[rotated], auto)
+    by (elim alw_ev_lockstep) (erule stream.rel_intros[rotated], auto simp: I_P Inv_def)
   from Finite.buechi_run_lasso[OF ys(1) this] show ?thesis
     using that .
 qed

@@ -5,11 +5,6 @@ theory Safety_Certification
     "~/Code/Explorer/Guess_Explore"
 begin
 
-thm Reachability_Impl_correct.certify_unreachableI
-term x
-term from_R
-term R_of
-
 locale Unreachability_Invariant_paired_pre_defs =
   fixes E :: "'l \<times> 's \<Rightarrow> 'l \<times> 's \<Rightarrow> bool" and P :: "'l \<times> 's \<Rightarrow> bool"
     and less_eq :: "'s \<Rightarrow> 's set \<Rightarrow> bool" (infix "\<preceq>" 50)
@@ -33,8 +28,6 @@ locale Unreachability_Invariant_paired_pre =
   assumes subsumes_Subsumed: "a \<preceq> A \<Longrightarrow> \<forall>s \<in> A. \<exists>T' \<subseteq> A'. s \<preceq> T' \<Longrightarrow> a \<preceq> A'"
 begin
 
-sublocale Unreachability_Invariant_pre oops
-
 sublocale Unreachability_Invariant where
   less_eq = "\<lambda>(l, s) S. (\<forall>(l', s') \<in> S. l' = l) \<and> s \<preceq> R_of S"
   apply standard
@@ -42,7 +35,8 @@ sublocale Unreachability_Invariant where
 
 end
 
-
+definition project (infix "\<restriction>" 55) where
+  "project S l = {s | s. (l, s) \<in> S}"
 
 locale Reachability_Impl_base =
   Certification_Impl_base where E = E +
@@ -51,16 +45,15 @@ locale Reachability_Impl_base =
   fixes P' and F
   assumes P'_P: "\<And> l s. P' (l, s) \<Longrightarrow> P (l, s)"
   assumes F_mono:
-    "\<And>a A. P a \<Longrightarrow> F a \<Longrightarrow> (\<lambda>(l, s) S.  (\<forall>(l', s') \<in> S. l' = l) \<and> s \<preceq> R_of S) a A
-    \<Longrightarrow> (\<forall> a \<in> A. P a) \<Longrightarrow> (\<forall> a \<in> A. F a)"
+    "\<And>a A. P a \<Longrightarrow> F a \<Longrightarrow> (\<lambda>(l, s) S. s \<preceq> S \<restriction> l) a A
+    \<Longrightarrow> (\<forall> a \<in> A. P a) \<Longrightarrow> (\<exists> a \<in> A. F a)"
 
 locale Reachability_Impl_pre =
   Reachability_Impl_base where E = E +
   Unreachability_Invariant_paired_pre where E = E +
   Paired_Graph_Set where E = E for E :: "'l \<times> 's \<Rightarrow> _"
 begin
-term M
-print_locale Certification_Impl
+
 sublocale Certification_Impl
   where R = "\<lambda>l s xs. s \<preceq> xs"
     and R_impl = "\<lambda>l s xs. RETURN (s \<preceq> xs)"
@@ -72,7 +65,7 @@ locale Reachability_Impl_pre_start =
   Reachability_Impl_pre where E = E for E :: "'l \<times> 's \<Rightarrow> _" +
   fixes l\<^sub>0 :: 'l and s\<^sub>0 :: 's
 begin
-term M
+
 sublocale Certification_Impl_Start
   where R = "\<lambda>l s xs. s \<preceq> xs"
     and R_impl = "\<lambda>l s xs. RETURN (s \<preceq> xs)"
@@ -85,22 +78,14 @@ locale Reachability_Impl_correct =
   Unreachability_Invariant_paired_pre where E = E for E :: "'l \<times> 's \<Rightarrow> _"
 begin
 
-term Unreachability_Invariant_paired
-
-term Unreachability_Invariant
-term M
-
 definition I where
   "I \<equiv> \<lambda>(l, s). l \<in> L \<and> s \<in> M l"
-
-definition project (infix "\<restriction>" 55) where
-  "project S l = {s | s. (l, s) \<in> S}"
 
 definition less_eq' where
   "less_eq' \<equiv> \<lambda>(l, s) S. s \<preceq> S \<restriction> l"
 
 lemma less_eq'_pair [simp]:
-  "less_eq' (l, s) S \<longleftrightarrow> s \<preceq> S  \<restriction> l"
+  "less_eq' (l, s) S \<longleftrightarrow> s \<preceq> S \<restriction> l"
   unfolding less_eq'_def project_def from_R_def by auto
 
 lemma project_from_R [simp]:
@@ -121,8 +106,7 @@ lemma project_subsI:
   using that unfolding project_def by auto
 
 lemma Unreachability_Invariant_pairedI[rule_format]:
-  "check_all_spec
-  \<longrightarrow> Unreachability_Invariant E P less_eq' I less_eq'"
+  "check_all_spec \<longrightarrow> Unreachability_Invariant E P less_eq' I less_eq'"
   unfolding check_all_spec_def check_all_pre_spec_def check_invariant_spec_def
 proof safe
   assume invariant:
@@ -188,6 +172,30 @@ proof safe
       by (auto elim: subsumes_Subsumed)
   qed
 qed
+
+lemma check_all_correct':
+  "check_all \<le> SPEC (\<lambda>r. r \<longrightarrow> Unreachability_Invariant E P less_eq' I less_eq')"
+  by (refine_vcg Unreachability_Invariant_pairedI check_all_correct) fast
+
+lemma in_from_R_conv:
+  "(l, s) \<in> from_R l' S \<longleftrightarrow> l = l' \<and> s \<in> S"
+  unfolding from_R_def by auto
+
+lemma F_mono':
+  "P (l, s) \<Longrightarrow> F (l, s) \<Longrightarrow> s \<preceq> B \<restriction> l \<Longrightarrow> \<forall>x \<in> B. P x \<Longrightarrow> \<exists>b \<in> B. F b"
+  by (drule F_mono[rotated, where A = "B"]) (auto simp: mem_project_iff)
+
+lemma certify_unreachableI:
+  "check_all_spec \<and> check_final_spec \<longrightarrow> (\<nexists>s'. E\<^sup>*\<^sup>* (l\<^sub>0, s\<^sub>0) s' \<and> F s')"
+  by (rule impI Unreachability_Invariant.final_unreachable[where S\<^sub>0 = "from_R l\<^sub>0 (M l\<^sub>0)"]
+        Unreachability_Invariant_pairedI)+
+     (auto intro: F_mono P'_P
+       simp: check_final_spec_def check_all_spec_def check_all_pre_spec_def
+        Unreachability_Invariant_defs.Inv_def I_def in_from_R_conv)
+
+lemma certify_unreachable_correct':
+  "certify_unreachable \<le> SPEC (\<lambda>r. r \<longrightarrow> (\<nexists>s'. E\<^sup>*\<^sup>* (l\<^sub>0, s\<^sub>0) s' \<and> F s'))"
+  by (refine_vcg certify_unreachableI[rule_format] certify_unreachable_correct; fast)
 
 end
 
