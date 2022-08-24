@@ -42,7 +42,8 @@ end
 subsection \<open>Implementation Locales\<close>
 
 locale TA_Impl_Ext =
-  TA_Impl +
+  TA_Impl where A = A and l\<^sub>0i = l\<^sub>0i
+  for A :: "('a, nat, int, 's) ta" and l\<^sub>0i :: "'si:: {hashable,heap}" +
   fixes states_mem_impl
   assumes states_mem_impl: "(states_mem_impl, (\<lambda>l. l \<in> states')) \<in> loc_rel \<rightarrow> bool_rel"
 
@@ -76,7 +77,13 @@ locale TGA_Start_Defs =
     "a \<in> strategy (l, u) \<Longrightarrow> u \<in> [curry (conv_M M)]\<^bsub>v,n\<^esub> \<Longrightarrow> wf_state (l, M)
   \<Longrightarrow> \<exists>M\<^sub>s C. (M\<^sub>s, C) \<in> set (S (l, M)) \<and> a \<in> C \<and> u \<in> [curry (conv_M M\<^sub>s)]\<^bsub>v,n\<^esub>"
   assumes S_dbm_equiv:
-    "(M\<^sub>s, C) \<in> set (S (l, M)) \<Longrightarrow> M \<simeq> M' \<Longrightarrow> \<exists>M\<^sub>s'. (M\<^sub>s', C) \<in> set (S (l, M')) \<and> M\<^sub>s \<simeq> M\<^sub>s'"
+    "(M\<^sub>s, C) \<in> set (S (l, M)) \<Longrightarrow> wf_dbm M \<Longrightarrow> wf_dbm M' \<Longrightarrow> M \<simeq> M'
+    \<Longrightarrow> \<exists>M\<^sub>s'. (M\<^sub>s', C) \<in> set (S (l, M')) \<and> M\<^sub>s \<simeq> M\<^sub>s'"
+  assumes S_dbm_mono:
+    "(M\<^sub>s, C) \<in> set (S (l, M)) \<Longrightarrow> wf_dbm M \<Longrightarrow> wf_dbm M'
+    \<Longrightarrow> [curry (conv_M M)]\<^bsub>v,n\<^esub> \<subseteq> [curry (conv_M M')]\<^bsub>v,n\<^esub>
+    \<Longrightarrow> \<exists>M\<^sub>s' C'. (M\<^sub>s', C') \<in> set (S (l, M'))
+      \<and> [curry (conv_M M\<^sub>s)]\<^bsub>v,n\<^esub> \<subseteq> [curry (conv_M M\<^sub>s')]\<^bsub>v,n\<^esub> \<and> C \<subseteq> C'"
   assumes strategy_split_preserves_wf_state:
     "(M\<^sub>s, C) \<in> set (S (l, M)) \<Longrightarrow> wf_state (l, M) \<Longrightarrow> wf_state (l, M\<^sub>s)"
 begin
@@ -97,7 +104,7 @@ inductive step_impl where
 sublocale sem: Timed_Safety_Game_Strat "conv_A A" controllable K strategy .
 
 lemma S_dbm_equivE:
-  assumes "(M\<^sub>s, C) \<in> set (S (l, M))" "M \<simeq> M'"
+  assumes "(M\<^sub>s, C) \<in> set (S (l, M))" "wf_dbm M" "wf_dbm M'" "M \<simeq> M'"
   obtains M\<^sub>s' where "(M\<^sub>s', C) \<in> set (S (l, M'))" "M\<^sub>s \<simeq> M\<^sub>s'"
   using assms by atomize_elim (rule S_dbm_equiv)
 
@@ -205,6 +212,13 @@ proof -
     by (auto dest!: inv.invariant_reaches
           sem_impl_simulation.simulation_reaches[where b = "(l\<^sub>0, Z\<^sub>0)"])
 qed
+
+lemma safe_fromI:
+  "sem.safe_from (l\<^sub>0, u\<^sub>0)"
+  if "(\<nexists>l' D'. step_impl\<^sup>*\<^sup>* (l\<^sub>0, D\<^sub>0) (l', D') \<and> from_R l' ([curry (conv_M D')]\<^bsub>v,n\<^esub>) \<inter> K \<noteq> {})"
+    "u\<^sub>0 \<in> [curry (conv_M D\<^sub>0)]\<^bsub>v,n\<^esub>" "wf_dbm D\<^sub>0"
+  unfolding sem.safe_from_alt_def using that
+  by (auto simp: wf_state_def dest!: sem_impl_simulation.simulation_reaches[where b = "(l\<^sub>0, D\<^sub>0)"])
 
 end
 
@@ -518,6 +532,13 @@ proof -
     by (auto dest!: inv.invariant_reaches
           sem_impl_simulation.simulation_reaches[where b = "(l\<^sub>0, Z\<^sub>0)"])
 qed
+
+lemma safe_fromI:
+  "sem.safe_from (l\<^sub>0, u\<^sub>0)"
+  if "(\<nexists>l' D'. step_impl\<^sup>*\<^sup>* (l\<^sub>0, D\<^sub>0) (l', D') \<and> from_R l' ([curry (conv_M D')]\<^bsub>v,n\<^esub>) \<inter> K \<noteq> {})"
+    "u\<^sub>0 \<in> [curry (conv_M D\<^sub>0)]\<^bsub>v,n\<^esub>" "wf_dbm D\<^sub>0"
+  unfolding sem.safe_from_alt_def using that
+  by (auto simp: wf_state_def dest!: sem_impl_simulation.simulation_reaches[where b = "(l\<^sub>0, D\<^sub>0)"])
 
 end
 
