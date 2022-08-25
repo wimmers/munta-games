@@ -1,15 +1,6 @@
 theory Normalized_Zone_Semantics_Certification_Impl2
   \<comment> \<open>This name is already duplicated but has nothing to do with that other theory.\<close>  
   imports
-    \<^cancel>\<open>TA_Impl.Normalized_Zone_Semantics_Impl_Refine
-    Normalized_Zone_Semantics_Certification
-    Collections.Refine_Dflt_ICF
-    Certification.Unreachability_Certification2
-    Certification.Unreachability_Certification
-    "HOL-Library.IArray"
-    Deadlock.Deadlock_Impl
-    TA_Library.More_Methods
-    "HOL-Library.Rewrite"\<close>
     Safety_Certification_Pure
     Timed_Game_Certification_Impl
     Normalized_Zone_Semantics_Certification2
@@ -21,8 +12,9 @@ theory Normalized_Zone_Semantics_Certification_Impl2
 begin
 
 hide_const (open) Refine_Foreach.list_set_rel
+hide_const (open) Simulation_Graphs_Certification.C
 
-paragraph \<open>Misc refinement setup\<close>
+subsection \<open>Misc refinement setup\<close>
 
 instance move :: ("{countable}") countable
   by (rule countable_classI[of
@@ -49,39 +41,11 @@ lemma fold_set_member_bex:
   "a \<in> S \<longleftrightarrow> (\<exists>x \<in> S. x = a)"
   by auto
 
-context TA_Start_Defs
-begin
 
-end
+subsection \<open>Successor Implementation\<close>
 
-context TA_Impl_Ext
-begin
-
-term step_impl_precise
-
-end
-
-context TA_Impl_Precise
-begin
-
-end
-
-
-subsection \<open>Duplication\<close>
-
-hide_const (open) Simulation_Graphs_Certification.C
-
-paragraph \<open>Successor Implementation\<close>
 context TGA_Start_Defs
 begin
-
-\<^cancel>\<open>lemma E_precise_E_op:
-  "E_precise = (\<lambda>(l, M) a (l', M'''). \<exists>g r. A \<turnstile> l \<longrightarrow>\<^bsup>g,a,r\<^esup> l' \<and> M''' = E_precise_op l r g l' M)"
-  unfolding E_precise_op_def E_precise_def by (intro ext) (auto elim!: step_impl.cases)\<close>
-
-term "op_precise.E_from_op = (\<lambda> (l, M) a (l', M'). case a of
-  \<tau> \<Rightarrow> l' = l \<and> M' = del l M
-  | \<upharpoonleft>a \<Rightarrow> \<exists> g r. A \<turnstile> l \<longrightarrow>\<^bsup>g,a,r\<^esup> l' \<and> M' = act l r g l' M)"
 
 paragraph \<open>Refinement\<close>
 
@@ -203,11 +167,6 @@ lemma succs_ctl_inner_rule[folded succs_ctl_inner_spec_def]:
         D \<in> T \<and> (D\<^sub>s, C) \<in> set (S (l, D)) \<and> Act a \<in> C \<and> D' = act l r g l' D\<^sub>s \<and> \<not> check_diag n D'
        }"
   unfolding succs_ctl_inner_def
-  \<^cancel>\<open>apply (refine_vcg nfoldli_rule[where
-        I = "\<lambda>l1 l2 \<sigma>. \<sigma> = rev (concat [[act l r g l' D\<^sub>s.
-        (D\<^sub>s, C) \<leftarrow> S (l, D), Act a \<in> C, \<not> check_diag n (act l r g l' D\<^sub>s)
-       ]. D \<leftarrow> l1])"
-     ])\<close>
   apply (refine_vcg nfoldli_rule[where
         I = "\<lambda>l1 l2 \<sigma>. \<sigma> = rev [act l r g l' D\<^sub>s.
         D \<leftarrow> l1, (D\<^sub>s, C) \<leftarrow> S (l, D), Act a \<in> C, \<not> check_diag n (act l r g l' D\<^sub>s)
@@ -247,75 +206,6 @@ lemma succs_wait_inner_rule[folded succs_wait_inner_spec_def]:
        ] @ acc"
      ]) auto
   by auto
-
-lemma list_comprehension_filter:
-  "[x. x \<leftarrow> xs, P x] = filter P xs"
-  by (induction xs; simp)
-
-lemma list_comprehension_map_filter:
-  "[f x. x \<leftarrow> xs, P x] = map f (filter P xs)"
-  by (induction xs; simp)
-
-lemma case_prod_if:
-  "(\<lambda>(a, b). if P a b then f a b else g a b) =
-   (\<lambda>x.
-      if (case x of (a, b) \<Rightarrow> P a b) then (case x of (a, b) \<Rightarrow> f a b) else (case x of (a, b) \<Rightarrow> g a b))"
-  by auto
-
-lemma case_prod_singleton:
-  "(\<lambda>(a, b). [f a b]) = (\<lambda>x. [case x of (a, b) \<Rightarrow> f a b])"
-  by auto
-
-term apply_if
-
-thm fold_filter
-
-lemma fold_append_meld':
-  "fold (\<lambda>x. apply_if (P x) ((#) (f x))) xs (acc1 @ acc2) = fold (\<lambda>x. apply_if (P x) ((#) (f x))) xs acc1 @ acc2"
-  by (induction xs arbitrary: acc1; simp) (metis (no_types, lifting) append_Cons)
-thm fold_append_meld'
-lemmas fold_append_meld = fold_append_meld'[of _ _ _ "[]", simplified, symmetric]
-
-lemma succs_precise_alt_def:
-  "succs_precise \<equiv> \<lambda>l T.
-    if T = {} then []
-    else rev (map (\<lambda>(g,a,r,l').
-      (l', {D' | D' D D\<^sub>s C.
-        D \<in> T \<and> (D\<^sub>s, C) \<in> set (S (l, D)) \<and> Act a \<in> C \<and> D' = act l r g l' D\<^sub>s \<and> \<not> check_diag n D'
-       }))
-      (filter (\<lambda>(g,a,r,l'). controllable a) (trans_fun l))
-    )
-    @ rev (map (\<lambda>(g,a,r,l').
-      (l', {D' | D' D. D \<in> T \<and> D' = act l r g l' D \<and> \<not> check_diag n D'})
-    ) (filter (\<lambda>(g,a,r,l'). \<not> controllable a) (trans_fun l)))
-    @ [
-      (l, {D' | D' D D\<^sub>s C.
-        D \<in> T \<and> (D\<^sub>s, C) \<in> set (S (l, D)) \<and> Wait \<in> C \<and> D' = del l D\<^sub>s \<and> \<not> check_diag n D'
-      })
-    ]"
-  unfolding succs_precise_def list_comprehension_map_filter[symmetric] apply (rule eq_reflection)
-  apply (intro ext)
-  apply (simp cong: concat_cong map_cong)
-  apply simp
-  apply (rule impI)
-  apply (rule arg_cong[where f = concat])
-  apply (rule arg_cong2[where f = map])
-  unfolding case_prod_if case_prod_singleton
-  apply (simp cong: if_cong)
-  apply (rule arg_cong[where f = concat])
-  apply (rule arg_cong2[where f = map])
-   apply auto
-  done
-  apply rule
-   apply (rule ext)
-   apply (rule if_cong)
-     apply rule
-    apply (rule )
-  apply simp
-  apply (simp cong: list.map_cong_simp)
-  apply (subst case_prod_if)
-  apply auto
-  done
 
 lemma succs_precise'_refine:
   "succs_precise' l T \<le> RETURN (succs_precise l T)"
@@ -395,6 +285,7 @@ lemmas [sepref_fr_rules] =
   act_impl del_impl
 
 end
+
 
 locale TGA_Start_Impl =
   TGA_Start_Defs +
@@ -554,7 +445,7 @@ lemma E_from_op_states:
 end
 
 
-paragraph \<open>A new implementation invariant for DBMs\<close>
+subsection \<open>A new implementation invariant for DBMs\<close>
 \<comment> \<open>Completely duplicated.\<close>
 
 context TA_Impl_Ext
@@ -667,7 +558,7 @@ end (* TA Impl Precise *)
 
 \<comment> \<open>Duplicated\<close>
 
-paragraph \<open>Refinement setup: \<open>list_to_dbm\<close>/\<open>set\<close>\<close>
+subsection \<open>Refinement setup: \<open>list_to_dbm\<close>/\<open>set\<close>\<close>
 context TA_Impl
 begin
 
@@ -697,7 +588,8 @@ lemma IArray_list_to_dbm_rel':
 end
 
 
-paragraph \<open>Table Implementations\<close>
+subsection \<open>Table Implementations\<close>
+\<comment> \<open>Slightly refactored\<close>
 
 locale TA_Impl_Loc_List =
   TA_Impl_Ext where A = A and l\<^sub>0i = l\<^sub>0i
@@ -990,6 +882,8 @@ lemmas L_dom_M_eqI = L_dom_M_eqI1[OF M_assms, folded M_alt_def]
 end
 
 
+subsection \<open>Deriving the Reachability Checker\<close>
+
 locale TGA_Certify_Safe =
   TGA_Start_Impl where A = A and l\<^sub>0i = l\<^sub>0i +
   TA_Impl_Tab where A = A and l\<^sub>0i = l\<^sub>0i
@@ -1002,8 +896,6 @@ locale TGA_Certify_Safe =
   assumes K_impl_refine:
     "(K_impl, (RETURN \<circ>\<circ> PR_CONST) Ki) \<in> (location_assn \<times>\<^sub>a mtx_assn n)\<^sup>d \<rightarrow>\<^sub>a bool_assn"
 begin
-
-paragraph \<open>Deriving the Reachability Checker\<close>
 
 interpretation DBM_Impl n .
 
