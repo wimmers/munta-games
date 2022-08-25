@@ -8,7 +8,7 @@ controllers of safety games.
 
 Follow these steps:
 
-1. Install [Isabelle-2021-1](isabelle.in.tum.de)
+1. Install [Isabelle-2021-1](https://isabelle.in.tum.de/)
 2. Install the corresponding version of the [AFP](https://www.isa-afp.org/download/)
 3. Register the AFP as an Isabelle component, see [AFP installation instructions](https://www.isa-afp.org/help/)
 4. Obtain a copy of [Munta](https://github.com/wimmers/munta/tree/timed-games)
