@@ -68,8 +68,7 @@ locale Reachability_Impl_pure =
     "nonempty x \<Longrightarrow> x \<preceq> {} \<longleftrightarrow> False"
   assumes succs_nonempty:
     "(l', S') \<in> set (succs l S) \<Longrightarrow> x \<in> S' \<Longrightarrow> nonempty x"
-  assumes P'_nonempty:
-    "P' (l, s) \<Longrightarrow> nonempty s"
+  assumes M_l\<^sub>0_not_None: "s\<^sub>0 \<preceq> {} \<Longrightarrow> M l\<^sub>0 \<noteq> None"
 begin
 
 paragraph \<open>Refinement\<close>
@@ -219,11 +218,6 @@ definition
   }
   }"
 
-lemma Pi_P'_A' [refine,param]:
-  "(Pi, P') \<in> K \<times>\<^sub>r A' \<rightarrow> bool_rel"
-  using P'_nonempty Pi_P'
-  by (smt (z3) A'_def case_prodD fun_relI mem_Collect_eq prod_relE prod_rel_simp tagged_fun_relD_both)
-
 definition check_all_pre0 where
   "check_all_pre0 = do {
   b1 \<leftarrow> RETURN (l\<^sub>0 \<in> L);
@@ -286,7 +280,7 @@ lemma check_all_pre0_refine:
   unfolding check_all_pre0_def check_all_pre_def
   subgoal
     apply (refine_rcg, simp)
-    apply (subst empty_not_subsumed, erule P'_nonempty)
+    apply (cases "s\<^sub>0 \<preceq> {}"; simp add: M_l\<^sub>0_not_None)
     apply (cases "check_prop P'" rule: nres_cases'; simp)
     using check_prop_gt_SUCCEED by order
   subgoal
@@ -476,5 +470,214 @@ theorem certify_unreachable_impl_pure_correct:
   using certify_unreachableI by simp
 
 end (* Reachability_Impl_pure correct *)
+
+locale Reachability_Impl_imp_base =
+  Reachability_Impl_base +
+  Certification_Impl_imp_base
+
+locale Reachability_Impl_imp_to_pure_base = Reachability_Impl_imp_base
+  where K = K and A = A
+  for K :: "'k \<Rightarrow> ('ki :: {hashable,heap}) \<Rightarrow> assn" and A :: "'s \<Rightarrow> ('si :: heap) \<Rightarrow> assn"
+  +
+  fixes to_state :: "'s1 \<Rightarrow> 'si Heap" and from_state :: "'si \<Rightarrow> 's1 Heap"
+    and to_loc :: "'k1 \<Rightarrow> 'ki" and from_loc :: "'ki \<Rightarrow> 'k1"
+  fixes lei
+  fixes K_rel and A_rel
+  fixes L_list :: "'ki list" and Li :: "'k1 list" and L :: "'k set" and L' :: "'k list"
+  fixes Li_split :: "'k1 list list"
+  assumes Li: "(L_list, L') \<in> \<langle>the_pure K\<rangle>list_rel" "(Li, L') \<in> \<langle>K_rel\<rangle>list_rel" "set L' = L"
+  assumes to_state_ht: "(s1, s) \<in> A_rel \<Longrightarrow> <emp> to_state s1 <\<lambda>si. A s si>"
+  assumes from_state_ht: "<A s si> from_state si <\<lambda>s'. \<up>((s', s) \<in> A_rel)>\<^sub>t"
+  assumes from_loc: "(li, l) \<in> the_pure K \<Longrightarrow> (from_loc li, l) \<in> K_rel"
+  assumes to_loc: "(l1, l) \<in> K_rel \<Longrightarrow> (to_loc l1, l) \<in> the_pure K"
+  assumes K_rel: "single_valued K_rel" "single_valued (K_rel\<inverse>)"
+  \<^cancel>\<open>assumes lei_less_eq: "(lei, (\<preceq>)) \<in> A_rel \<rightarrow> A_rel \<rightarrow> bool_rel"\<close>
+  assumes lei_less_eq: "(lei, (\<preceq>)) \<in> A_rel \<rightarrow> \<langle>A_rel\<rangle>list_set_rel \<rightarrow> bool_rel"
+  assumes full_split: "set Li = (\<Union>xs \<in> set Li_split. set xs)"
+begin
+
+definition
+  "get_succs l xs \<equiv>
+    do {
+      let li = to_loc l;
+      xsi \<leftarrow> Heap_Monad.fold_map to_state xs;
+      r \<leftarrow> succsi li xsi;
+      Heap_Monad.fold_map
+        (\<lambda>(li, xsi). do {xs \<leftarrow> Heap_Monad.fold_map from_state xsi; return (from_loc li, xs)}) r
+    }"
+
+lemma get_succs:
+  "(run_heap oo get_succs, succs)
+  \<in> K_rel \<rightarrow> \<langle>A_rel\<rangle>list_set_rel \<rightarrow> \<langle>K_rel \<times>\<^sub>r \<langle>A_rel\<rangle>list_set_rel\<rangle>list_rel"
+proof (refine_rcg, clarsimp, rule hoare_triple_run_heapD)
+  fix l :: \<open>'k\<close> and l1 :: \<open>'k1\<close> and xs :: \<open>'s1 list\<close> and S :: \<open>'s set\<close>
+  assume \<open>(l1, l) \<in> K_rel\<close> \<open>(xs, S) \<in> \<langle>A_rel\<rangle>list_set_rel\<close>
+  then obtain ys where ys: "(xs, ys) \<in> \<langle>A_rel\<rangle>list_rel" "set ys = S"
+    by (elim list_set_relE)
+  have 1: "K = pure (the_pure K)"
+    using pure_K by auto
+  let ?li = "to_loc l1"
+  show "<emp> get_succs l1 xs <\<lambda>r. \<up>((r, succs l S) \<in> \<langle>K_rel \<times>\<^sub>r \<langle>A_rel\<rangle>list_set_rel\<rangle>list_rel)>\<^sub>t"
+    unfolding get_succs_def
+    apply sep_auto
+      (* fold_map to_state *)
+     apply (rule Hoare_Triple.cons_pre_rule[rotated])
+      apply (rule fold_map_ht3[where A = true and R = "pure A_rel" and Q = A and xs = ys])
+    apply (sep_auto heap: to_state_ht simp: pure_def; fail)
+     apply (unfold list_assn_pure_conv, sep_auto simp: pure_def ys; fail)
+    apply sep_auto
+      (* succsi *)
+     apply (rule Hoare_Triple.cons_pre_rule[rotated], rule frame_rule[where R = true])
+      apply (rule succsi[to_hnr, unfolded hn_refine_def hn_ctxt_def, simplified, of S _ l ?li])
+    subgoal
+      using ys \<open>(l1, l) \<in> K_rel\<close> unfolding lso_assn_def hr_comp_def br_def \<open>set ys = _\<close>[symmetric]
+      by (subst 1) (sep_auto simp: pure_def to_loc)
+        (* nested fold_map *)
+    apply (sep_auto simp: invalid_assn_def)
+    apply (rule cons_rule[rotated 2])
+      apply (rule frame_rule)
+      apply (rule fold_map_ht1[where
+          A = true and R = "(K \<times>\<^sub>a lso_assn A)" and xs = "succs l S" and
+          Q = "\<lambda>x xi. (xi, x) \<in> K_rel \<times>\<^sub>r \<langle>A_rel\<rangle>list_set_rel"
+          ])
+    subgoal
+      unfolding lso_assn_def
+      apply (subst 1, subst pure_def)
+      apply (sep_auto simp: prod_assn_def hr_comp_def br_def split: prod.splits)
+        (* inner fold_map *)
+       apply (rule Hoare_Triple.cons_pre_rule[rotated])
+        apply (rule fold_map_ht1[where A = true and R = A and Q = "\<lambda>l l1. (l1, l) \<in> A_rel"])
+        apply (rule cons_rule[rotated 2], rule frame_rule, rule from_state_ht)
+         apply frame_inference
+        apply (sep_auto; fail)
+       apply solve_entails
+        (* return *)
+      using list_all2_swap by (sep_auto simp: list.rel_eq list_set_rel_def from_loc list_rel_def)
+     apply solve_entails
+    using list_all2_swap by (sep_auto simp: list_rel_def)
+qed
+
+definition
+  "to_pair \<equiv> \<lambda>(l, s). do {s \<leftarrow> to_state s; return (to_loc l, s)}"
+
+lemma to_pair_ht:
+  "<emp> to_pair a1 <\<lambda>ai. (K \<times>\<^sub>a A) a ai>" if "(a1, a) \<in> K_rel \<times>\<^sub>r A_rel"
+  using that unfolding to_pair_def
+  by (cases a, cases a1, subst pure_the_pure[symmetric, OF pure_K])
+     (sep_auto heap: to_state_ht simp: pure_def to_loc prod_assn_def split: prod.splits)
+
+sublocale pure:
+  Reachability_Impl_pure_base2
+  where
+    get_succs = "run_heap oo get_succs" and
+    K = K_rel and
+    A = A_rel and
+    lei = lei and
+    Pi = "\<lambda>a. run_heap (do {a \<leftarrow> to_pair a; Pi a})" and
+    Fi = "\<lambda>a. run_heap (do {a \<leftarrow> to_pair a; Fi a})" \<^cancel>\<open>and
+    l\<^sub>0i = "from_loc (run_heap l\<^sub>0i)" and
+    s\<^sub>0i = "run_heap (do {s \<leftarrow> s\<^sub>0i; from_state s})"\<close>
+  apply standard
+  subgoal
+    by (rule K_rel)
+  subgoal
+    by (rule K_rel)
+  subgoal
+    using Li unfolding list_set_rel_def by auto
+  subgoal
+    by (rule lei_less_eq)
+  subgoal
+    using get_succs .
+  subgoal
+    by (rule full_split)
+  subgoal
+    apply standard
+    apply (rule hoare_triple_run_heapD)
+    apply (sep_auto heap: to_pair_ht simp del: prod_rel_simp prod_assn_pair_conv)
+    apply (rule Hoare_Triple.cons_rule[rotated 2])
+      apply (rule Pi_P'[to_hnr, unfolded hn_refine_def hn_ctxt_def, simplified], rule ent_refl)
+    apply (sep_auto simp: pure_def)
+    done
+  subgoal
+    apply standard
+    apply (rule hoare_triple_run_heapD)
+    apply (sep_auto heap: to_pair_ht simp del: prod_rel_simp prod_assn_pair_conv)
+    apply (rule Hoare_Triple.cons_rule[rotated 2])
+      apply (rule Fi_F[to_hnr, unfolded hn_refine_def hn_ctxt_def, simplified], rule ent_refl)
+    apply (sep_auto simp: pure_def)
+    done
+  done
+
+end
+
+locale Reachability_Impl_imp_to_pure = Reachability_Impl where
+  l\<^sub>0 = l\<^sub>0 and s\<^sub>0 = s\<^sub>0 and M = M and K = K and A = A
+  + Reachability_Impl_imp_to_pure_base
+  where K_rel = K_rel and A_rel = A_rel and K = K and A = A
+  for l\<^sub>0 :: 'k and s\<^sub>0 :: 'a
+  and K :: "'k \<Rightarrow> ('ki :: {hashable,heap}) \<Rightarrow> assn" and A :: "'a \<Rightarrow> ('ai :: heap) \<Rightarrow> assn"
+  and M and K_rel :: "('k1 \<times> 'k) set" and A_rel :: "('a1 \<times> 'a) set" +
+  fixes Mi :: "'k1 \<Rightarrow> 'a1 list option"
+  assumes Mi_M: "(Mi, M) \<in> K_rel \<rightarrow> \<langle>\<langle>A_rel\<rangle>list_set_rel\<rangle>option_rel"
+  fixes nonempty :: "'a \<Rightarrow> bool"
+  assumes empty_not_subsumed [simp]:
+    "nonempty x \<Longrightarrow> x \<preceq> {} \<longleftrightarrow> False"
+  assumes succs_nonempty:
+    "(l', S') \<in> set (succs l S) \<Longrightarrow> x \<in> S' \<Longrightarrow> nonempty x"
+  assumes M_l\<^sub>0_not_None: "s\<^sub>0 \<preceq> {} \<Longrightarrow> M l\<^sub>0 \<noteq> None"
+begin
+
+sublocale pure:
+  Reachability_Impl_pure
+  where           
+    M = M and
+    Mi = Mi and
+    get_succs = "run_heap oo get_succs" and
+    K = K_rel and
+    A = A_rel and
+    lei = lei and
+    Pi = "\<lambda>a. run_heap (do {a \<leftarrow> to_pair a; Pi a})" and
+    Fi = "\<lambda>a. run_heap (do {a \<leftarrow> to_pair a; Fi a})" and
+    l\<^sub>0i = "from_loc (run_heap l\<^sub>0i)" and
+    s\<^sub>0i = "run_heap (do {s \<leftarrow> s\<^sub>0i; from_state s})"
+  apply standard
+    apply (rule Mi_M)
+  subgoal
+    apply (rule from_loc)
+    apply (rule hoare_triple_run_heapD)
+    using l\<^sub>0i_l\<^sub>0[to_hnr, unfolded hn_refine_def hn_ctxt_def, simplified]
+    apply (subst (asm) pure_the_pure[symmetric, OF pure_K])
+    apply (sep_auto simp: pure_def elim!: cons_post_rule)
+    done
+  subgoal
+    using s\<^sub>0i_s\<^sub>0[to_hnr, unfolded hn_refine_def hn_ctxt_def, simplified]
+    by - (rule hoare_triple_run_heapD, sep_auto heap: from_state_ht)
+  apply (rule empty_not_subsumed succs_nonempty M_l\<^sub>0_not_None; assumption; fail)+
+  done
+
+end
+
+locale Reachability_Impl_imp_to_pure_correct =
+  Reachability_Impl_imp_to_pure where M = M
+  + Reachability_Impl_correct where M = "\<lambda>x. case M x of None \<Rightarrow> {} | Some S \<Rightarrow> S"
+  for M
+begin
+
+sublocale pure:
+  Reachability_Impl_pure_correct
+  where           
+    M = M and
+    Mi = Mi and
+    get_succs = "run_heap oo get_succs" and
+    K = K_rel and
+    A = A_rel and
+    lei = lei and
+    Pi = "\<lambda>a. run_heap (do {a \<leftarrow> to_pair a; Pi a})" and
+    Fi = "\<lambda>a. run_heap (do {a \<leftarrow> to_pair a; Fi a})" and
+    l\<^sub>0i = "from_loc (run_heap l\<^sub>0i)" and
+    s\<^sub>0i = "run_heap (do {s \<leftarrow> s\<^sub>0i; from_state s})"
+  by standard
+
+end
 
 end

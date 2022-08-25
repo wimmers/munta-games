@@ -991,9 +991,17 @@ lemmas L_dom_M_eqI = L_dom_M_eqI1[OF M_assms, folded M_alt_def]
 end
 
 
-locale All1 =
-  TGA_Start_Impl +
-  TA_Impl_Tab
+locale TGA_Certify_Safe =
+  TGA_Start_Impl where A = A and l\<^sub>0i = l\<^sub>0i +
+  TA_Impl_Tab where A = A and l\<^sub>0i = l\<^sub>0i
+  for A :: "('a, nat, int, 's) ta" and l\<^sub>0i :: "'si:: {hashable,heap}" +
+  fixes Ki :: "'s \<times> int DBM' \<Rightarrow> bool"
+  fixes K_impl
+  assumes Ki_K: "(l, u) \<in> K \<Longrightarrow> u \<in> [curry (conv_M D)]\<^bsub>v,n\<^esub> \<Longrightarrow> wf_dbm D \<Longrightarrow> Ki (l, D)"
+  assumes Ki_mono:
+    "Ki (l, D) \<Longrightarrow> wf_dbm D \<Longrightarrow> wf_dbm D' \<Longrightarrow> dbm_subset n D D' \<Longrightarrow> Ki (l, D')"
+  assumes K_impl_refine:
+    "(K_impl, (RETURN \<circ>\<circ> PR_CONST) Ki) \<in> (location_assn \<times>\<^sub>a mtx_assn n)\<^sup>d \<rightarrow>\<^sub>a bool_assn"
 begin
 
 paragraph \<open>Deriving the Reachability Checker\<close>
@@ -1090,7 +1098,7 @@ lemma step_impl_mono:
 interpretation reach:
   Reachability_Impl
   where A = mtx_assn
-    and F = F
+    and F = Ki
     and l\<^sub>0i = "return l\<^sub>0i"
     and s\<^sub>0 = init_dbm
     and s\<^sub>0i = legacy.init_dbm_impl
@@ -1099,7 +1107,7 @@ interpretation reach:
     and less_eq = subsumption
     and Lei = subsumption_impl
     and E = step_impl
-    and Fi = F_impl
+    and Fi = K_impl
     and K = location_assn
     and keyi = "return o fst"
     and copyi = amtx_copy
@@ -1146,7 +1154,7 @@ interpretation reach:
   subgoal (* P refine *)
     by (rule P_impl_refine)
   subgoal (* F refine *)
-    by (rule F_impl)
+    by (rule K_impl_refine)
   subgoal (* succs refine *)
     using succs_precise_impl_refine unfolding b_assn_pure_conv .
   apply (rule location_assn_constraints; fail)+ (* location assn is correct *)
@@ -1159,7 +1167,8 @@ interpretation reach:
   apply (rule dbm_subset_refl; fail)
   apply (rule dbm_subset_trans; assumption)\<close>
   subgoal (* F mono *)
-    by (rule F_mono)
+    \<comment> \<open>XXX Move lemmas about \<^term>\<open>project\<close>\<close>
+    unfolding subsumption_def project_def by (auto dest: Ki_mono)
   subgoal for s S' l l' t (* E_precise mono *)
     using step_impl_mono by auto
   subgoal (* E_precise invariant *)
@@ -1177,17 +1186,125 @@ interpretation reach:
 
 lemmas reachability_impl = reach.Reachability_Impl_axioms
 
+context
+  fixes Li_split :: "'si list list"
+  assumes full_split: "set L_list = (\<Union>xs \<in> set Li_split. set xs)"
+begin
 
+\<comment> \<open>This would probably need to be an assumption for a relaxed subsumption operation.\<close>
+lemma M_l\<^sub>0_not_None:
+  "subsumption s\<^sub>0 {} \<Longrightarrow> M l\<^sub>0 \<noteq> None"
+  unfolding subsumption_def by auto
 
+\<comment> \<open>XXX Move\<close>
+definition
+  "dbm_subset_pure \<equiv> \<lambda>as bs.
+      (\<exists>i\<le>n. IArray.sub as (i + i * n + i) < Le 0) \<or> array_all2 (Suc n * Suc n) (\<le>) as bs"
 
+definition "subsumption_pure \<equiv> \<lambda>(x :: int DBMEntry iarray) S. \<exists>y \<in> set S. dbm_subset_pure x y"
 
+\<comment> \<open>XXX Move\<close>
+lemma dbm_subset_pure_refine:
+  "(dbm_subset_pure, dbm_subset n)
+    \<in> {(a, b). iarray_mtx_rel (Suc n) (Suc n) b a} \<rightarrow>
+       {(a, b). iarray_mtx_rel (Suc n) (Suc n) b a} \<rightarrow> bool_rel"
+  unfolding dbm_subset_pure_def dbm_subset_def check_diag_def
+  by (auto simp: array_all2_iff_pointwise_cmp[symmetric] iarray_mtx_relD)
 
+\<comment> \<open>XXX Move\<close>
+lemma list_set_rel_set_rel:
+  "(set xs, T) \<in> \<langle>R\<rangle>set_rel" if "(xs, T) \<in> \<langle>R\<rangle>list_set_rel"
+  using that unfolding list_set_rel_def set_rel_def
+  by clarsimp (meson list_rel_setE1 list_rel_setE2)
+
+lemma subsumption_pure_refine:
+  "(subsumption_pure, subsumption)
+    \<in> {(a, b). iarray_mtx_rel (Suc n) (Suc n) b a} \<rightarrow>
+       \<langle>{(a, b). iarray_mtx_rel (Suc n) (Suc n) b a}\<rangle>list_set_rel \<rightarrow> bool_rel"
+  unfolding subsumption_pure_def subsumption_def
+  supply [param] = dbm_subset_pure_refine
+  by parametricity (rule list_set_rel_set_rel)
+
+interpretation Reachability_Impl_imp_to_pure_correct
+  where A = mtx_assn
+    and F = Ki
+    and l\<^sub>0i = "return l\<^sub>0i"
+    and s\<^sub>0 = init_dbm
+    and s\<^sub>0i = legacy.init_dbm_impl
+    and succs = succs_precise
+    and succsi = succs_precise'_impl
+    and less_eq = subsumption
+    and Lei = subsumption_impl
+    \<^cancel>\<open>and lei = "\<lambda>as bs.
+      (\<exists>i\<le>n. IArray.sub as (i + i * n + i) < Le 0) \<or> array_all2 (Suc n * Suc n) (\<le>) as bs"\<close>
+    and lei = subsumption_pure
+    and E = step_impl
+    and Fi = K_impl
+    and K = location_assn
+    and keyi = "return o fst"
+    and copyi = amtx_copy
+    and P = "\<lambda>(l, M). l \<in> states' \<and> wf_dbm M"
+    and P' = P
+    and Pi = P_impl
+    and L = "set L"
+    and M = M
+    and to_loc = id
+    and from_loc = id
+    and L_list = L_list
+    and K_rel = location_rel
+    and L' = L
+    and Li = L_list
+    and to_state = array_unfreeze
+    and from_state = array_freeze
+    and A_rel = "{(a, b). iarray_mtx_rel (Suc n) (Suc n) b a}"
+    and Mi = "\<lambda>k. Impl_Array_Hash_Map.ahm_lookup (=) bounded_hashcode_nat k Mi"
+    and nonempty = "\<lambda>D. \<not> check_diag n D" \<comment> \<open>This would also work: \<^term>\<open>\<lambda>_. True\<close>.\<close>
+  apply standard
+  subgoal
+    using L_list_rel by simp
+  subgoal
+    by (rule L_list_rel)
+  subgoal
+    ..
+  subgoal for s1 s
+    by (rule array_unfreeze_ht) simp
+  subgoal for si s
+    by (sep_auto heap: array_freeze_ht)
+  subgoal
+    by simp
+  subgoal
+    by simp
+  subgoal
+    by (rule legacy.right_unique_location_rel) \<comment> \<open>Also in @{thm location_assn_constraints}.\<close>
+  subgoal
+    using legacy.left_unique_location_rel unfolding IS_LEFT_UNIQUE_def .
+  subgoal
+    by (rule subsumption_pure_refine)
+  subgoal
+    using full_split .
+  subgoal
+    using Mi_M .
+  \<comment> \<open>Properties of \<open>nonempty\<close>\<close>
+  subgoal premises prems for x
+    using prems unfolding subsumption_def by auto
+  subgoal premises prems for l' S' l Sa x
+    using prems unfolding succs_precise_def by (auto split: if_split_asm)
+  by (rule M_l\<^sub>0_not_None)
+
+concrete_definition certify_unreachable_pure
+  uses pure.certify_unreachable_impl_pure_correct[unfolded to_pair_def get_succs_def] is "?f \<longrightarrow> _"
+
+lemma certify_unreachable_pure_refine:
+  assumes "fst ` set M_list = set L_list" certify_unreachable_pure
+  shows "\<forall>u\<^sub>0. (\<forall>c\<le>n. u\<^sub>0 c = 0) \<longrightarrow> sem.safe_from (l\<^sub>0, u\<^sub>0)"
+  using certify_unreachable_pure.refine[OF L_dom_M_eqI] assms
+  by (auto simp: init_dbm_semantics intro!: safe_fromI[where D\<^sub>0 = init_dbm])
+  \<comment> \<open>XXX Move @{thm reach.in_from_R_conv}\<close>
+     (drule Ki_K, auto simp: wf_state_def reach.in_from_R_conv
+        dest: sem_impl_simulation.PB_invariant.invariant_reaches)
+
+end (* Fixed splitter *)
 
 end
-
-
-paragraph \<open>Deriving the Main Simulation Theorems\<close>
-
-\<comment> \<open>Insert stuff we already have.\<close>
 
 end
