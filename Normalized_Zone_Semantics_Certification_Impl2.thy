@@ -13,14 +13,14 @@ theory Normalized_Zone_Semantics_Certification_Impl2
     Safety_Certification_Pure
     Timed_Game_Certification_Impl
     Normalized_Zone_Semantics_Certification2
-    Certification.Normalized_Zone_Semantics_Certification_Impl_Misc
+    Certification.Unreachability_TA_Misc
     TA_Library.Reordering_Quantifiers
     TA_Library.More_Methods
     \<^cancel>\<open>Certification.Normalized_Zone_Semantics_Certification_Impl\<close> \<comment> \<open>We will duplicate this stuff\<close>
     \<comment> \<open>Need to rename local copy of Normalized_Zone_Semantics_Certification\<close>
 begin
 
-term x
+hide_const (open) Refine_Foreach.list_set_rel
 
 paragraph \<open>Misc refinement setup\<close>
 
@@ -685,8 +685,7 @@ lemmas [sepref_fr_rules] = set_of_list_hnr'
 lemma IArray_list_to_dbm_rel[param]:
   "(IArray, list_to_dbm n)
   \<in> {(xs, ys). xs = ys \<and> length xs = Suc n * Suc n} \<rightarrow> {(a, b). iarray_mtx_rel (Suc n) (Suc n) b a}"
-  unfolding list_to_dbm_def op_amtx_new_def iarray_mtx_rel_def
-    Normalized_Zone_Semantics_Certification_Impl_Misc.dbm_tab_def
+  unfolding list_to_dbm_def op_amtx_new_def iarray_mtx_rel_def Unreachability_TA_Misc.dbm_tab_def
   by (auto simp: algebra_simps)
 
 lemma IArray_list_to_dbm_rel':
